@@ -1,0 +1,5 @@
+# Julia profiling files
+*.jl.cov
+*.jl.mem
+
+/Manifest.toml

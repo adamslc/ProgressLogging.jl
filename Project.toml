@@ -1,0 +1,8 @@
+name = "ProgressLogging"
+uuid = "4ce49e30-a246-11e8-284f-6b410f95840d"
+authors = ["Luke Adams <adamslc@whitman.edu>"]
+version = "0.1.0"
+
+[deps]
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
