@@ -145,17 +145,17 @@ function printvalues!(p::ProgressLogger, showvalues; prefix_color=false, value_c
     p.numprintedvalues = length(showvalues)
 end
 
+macro progress(percentage)
+    :(@logmsg(ProgressLevel, "", progress=$(esc(percentage)), _module=nothing, _group=nothing, _id=nothing, _file=nothing, _line=nothing))
+end
+
 function with_progress(f::Function; kwargs...)
     Logging.disable_logging(Logging.LogLevel(-2))
 	logger = ProgressLogger(; kwargs...)
 	with_logger(logger) do
 		f()
 	end
-	finish_progress(logger)
-end
-
-macro progress(percentage)
-	:(@logmsg(ProgressLevel, "", progress=$(esc(percentage)), _module=nothing, _group=nothing, _id=nothing, _file=nothing, _line=nothing))
+	@progress "done"
 end
 
 end # module
