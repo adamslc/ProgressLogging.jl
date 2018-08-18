@@ -7,6 +7,8 @@ export ProgressLogger, BarGlyphs, with_progress, @progress
 include("BarGlyphs.jl")
 include("utils.jl")
 
+const ProgressLevel = Logging.LogLevel(-1)
+
 mutable struct ProgressLogger <: AbstractLogger
 	parent_logger::AbstractLogger
 	output::IO
@@ -25,12 +27,14 @@ mutable struct ProgressLogger <: AbstractLogger
 	desc_color::Symbol
 	bar_color::Symbol
 
+    float::Bool
+
 	numprintedvalues::Int
 	current_values::Vector{Any}
 
 	function ProgressLogger(; dt=0.1, desc="Progress: ", desc_color=:green,
 							bar_color=:color_normal, output=stderr,
-							barlen=tty_width(desc),
+							barlen=tty_width(desc), float::Bool=true,
 							barglyphs=BarGlyphs('|','█','█',' ','|'))
 		percentage = 0.
 		tfirst = tlast = time()
@@ -38,42 +42,46 @@ mutable struct ProgressLogger <: AbstractLogger
 		numprintedvalues = 0
 
 		new(current_logger(), output, percentage, tfirst, tlast, dt, printed,
-			desc, barlen, barglyphs, desc_color, bar_color, numprintedvalues, Any[])
+			desc, barlen, barglyphs, desc_color, bar_color, float,
+            numprintedvalues, Any[])
 	end
 end
 
 function handle_message(logger::ProgressLogger, level, message, mod, group, id,
 						file, line; kwargs...)
-	if haskey(kwargs, :_progress)
+	if haskey(kwargs, :progress)
 
-		logger.percentage = kwargs[:_progress]
+		logger.percentage = kwargs[:progress]
 
 		time() < logger.tlast + logger.dt && return
 
 		current_values = Any[]
 		for (key, value) in kwargs
 			key_str = string(key)
-			key_str[1] != '_' && push!(current_values, (key_str, value))
+			if key_str[1] != '_' && key_str != "progress"
+                push!(current_values, (key_str, value))
+            end
 		end
 		logger.current_values = current_values
 
-		logger.printed && move_cursor_up_while_clearing_lines(logger.output, logger.numprintedvalues)
+		logger.printed && logger.float && move_cursor_up_while_clearing_lines(logger.output, logger.numprintedvalues)
 		print_progress(logger)
+        logger.float || println(logger.output)
 	else
-		logger.printed && move_cursor_up_while_clearing_lines(logger.output, logger.numprintedvalues)
-		logger.printed && print("\r\u1b[K")
+		logger.printed && logger.float && move_cursor_up_while_clearing_lines(logger.output, logger.numprintedvalues)
+		logger.printed && logger.float && print("\r\u1b[K")
 		with_logger(logger.parent_logger) do 
 			@logmsg(level, message, _module=mod, _group=group, _id=id,
 			_file=file, _line=line, kwargs...)
 		end
-		print_progress(logger)
-		# logger.numprintedvalues > 0 && println(logger.output)
+		logger.float && print_progress(logger)
 	end
 end
-function shouldlog(logger::ProgressLogger, args...)
-	shouldlog(logger.parent_logger, args...)
+function shouldlog(logger::ProgressLogger, level, args...)
+    level == ProgressLevel && return true
+	shouldlog(logger.parent_logger, level, args...)
 end
-min_enabled_level(logger::ProgressLogger) = min_enabled_level(logger.parent_logger)
+min_enabled_level(logger::ProgressLogger) = min(Logging.LogLevel(-2), min_enabled_level(logger.parent_logger))
 
 function print_progress(p::ProgressLogger)
     t = time()
@@ -112,7 +120,7 @@ function finish_progress(p::ProgressLogger)
     bar_str = @sprintf "100%%%s Time: %s" bar dur
     prefix = length(p.current_values) == 0 ? "[ " : "┌ "
 
-	move_cursor_up_while_clearing_lines(p.output, p.numprintedvalues)
+	p.float && move_cursor_up_while_clearing_lines(p.output, p.numprintedvalues)
     printover(p.output, prefix*p.desc, bar_str, p.desc_color, p.bar_color)
     printvalues!(p, p.current_values; prefix_color=p.desc_color, value_color=p.bar_color)
     println(p.output)
@@ -136,6 +144,7 @@ function printvalues!(p::ProgressLogger, showvalues; prefix_color=false, value_c
 end
 
 function with_progress(f::Function; kwargs...)
+    Logging.disable_logging(Logging.LogLevel(-2))
 	logger = ProgressLogger(; kwargs...)
 	with_logger(logger) do
 		f()
@@ -144,7 +153,7 @@ function with_progress(f::Function; kwargs...)
 end
 
 macro progress(percentage)
-	:(@info("", _progress=$(esc(percentage)), _module=nothing, _group=nothing, _id=nothing, _file=nothing, _line=nothing))
+	:(@logmsg(ProgressLevel, "", progress=$(esc(percentage)), _module=nothing, _group=nothing, _id=nothing, _file=nothing, _line=nothing))
 end
 
 end # module
