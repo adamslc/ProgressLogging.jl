@@ -47,14 +47,16 @@ mutable struct ProgressLogger <: AbstractLogger
 	end
 end
 
-function handle_message(logger::ProgressLogger, level, message, mod, group, id,
+function handle_message(p::ProgressLogger, level, message, mod, group, id,
 						file, line; kwargs...)
 	if haskey(kwargs, :progress)
+        if kwargs[:progress] == "done"
+            finish_progress(p)
+            return
+        end
 
-		logger.percentage = kwargs[:progress]
-
-		time() < logger.tlast + logger.dt && return
-
+		p.percentage = kwargs[:progress]
+		time() < p.tlast + p.dt && return
 		current_values = Any[]
 		for (key, value) in kwargs
 			key_str = string(key)
@@ -62,26 +64,26 @@ function handle_message(logger::ProgressLogger, level, message, mod, group, id,
                 push!(current_values, (key_str, value))
             end
 		end
-		logger.current_values = current_values
+		p.current_values = current_values
 
-		logger.printed && logger.float && move_cursor_up_while_clearing_lines(logger.output, logger.numprintedvalues)
-		print_progress(logger)
-        logger.float || println(logger.output)
+		p.printed && p.float && move_cursor_up_while_clearing_lines(p.output, p.numprintedvalues)
+		print_progress(p)
+        p.float || println(p.output)
 	else
-		logger.printed && logger.float && move_cursor_up_while_clearing_lines(logger.output, logger.numprintedvalues)
-		logger.printed && logger.float && print("\r\u1b[K")
-		with_logger(logger.parent_logger) do 
+		p.printed && p.float && move_cursor_up_while_clearing_lines(p.output, p.numprintedvalues)
+		p.printed && p.float && print("\r\u1b[K")
+		with_logger(p.parent_logger) do 
 			@logmsg(level, message, _module=mod, _group=group, _id=id,
 			_file=file, _line=line, kwargs...)
 		end
-		logger.float && print_progress(logger)
+		p.float && print_progress(p)
 	end
 end
-function shouldlog(logger::ProgressLogger, level, args...)
+function shouldlog(p::ProgressLogger, level, args...)
     level == ProgressLevel && return true
-	shouldlog(logger.parent_logger, level, args...)
+	shouldlog(p.parent_logger, level, args...)
 end
-min_enabled_level(logger::ProgressLogger) = min(Logging.LogLevel(-2), min_enabled_level(logger.parent_logger))
+min_enabled_level(p::ProgressLogger) = min(Logging.LogLevel(-2), min_enabled_level(p.parent_logger))
 
 function print_progress(p::ProgressLogger)
     t = time()
