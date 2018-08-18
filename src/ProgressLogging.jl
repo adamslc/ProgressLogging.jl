@@ -72,34 +72,34 @@ function handle_message(p::ProgressLogger, level, message, mod, group, id,
 	else
 		p.printed && p.float && move_cursor_up_while_clearing_lines(p.output, p.numprintedvalues)
 		p.printed && p.float && print("\r\u1b[K")
-		with_logger(p.parent_logger) do 
-			@logmsg(level, message, _module=mod, _group=group, _id=id,
-			_file=file, _line=line, kwargs...)
+
+		if Logging.min_enabled_level(p.parent_logger) <= level && Logging.shouldlog(p.parent_logger, level, mod, group, id)
+			Logging.handle_message(p.parent_logger, level, message, mod, group, id, file, line; kwargs...)
 		end
+
 		p.float && print_progress(p)
 	end
 end
 function shouldlog(p::ProgressLogger, level, args...)
-    level == ProgressLevel && return true
-	shouldlog(p.parent_logger, level, args...)
+    return true
 end
 min_enabled_level(p::ProgressLogger) = min(Logging.LogLevel(-2), min_enabled_level(p.parent_logger))
 
 function print_progress(p::ProgressLogger)
     t = time()
 
-    p.percentage > 100 && return
+    p.percentage > 1 && return
 
     bar = barstring(p.barlen, p.percentage, barglyphs=p.barglyphs)
     elapsed_time = t - p.tfirst
-    est_total_time = 100 * elapsed_time / p.percentage
+    est_total_time = elapsed_time / p.percentage
     if 0 <= est_total_time <= typemax(Int)
         eta_sec = round(Int, est_total_time - elapsed_time )
         eta = durationstring(eta_sec)
     else
         eta = "N/A"
     end
-	bar_str = @sprintf "%3u%%%s  ETA: %s" round(Int, p.percentage) bar eta
+	bar_str = @sprintf "%3u%%%s  ETA: %s" round(Int, 100*p.percentage) bar eta
 
     prefix = length(p.current_values) == 0 ? "[ " : "┌ "
     printover(p.output, prefix*p.desc, bar_str, p.desc_color, p.bar_color)
@@ -117,7 +117,7 @@ end
 function finish_progress(p::ProgressLogger)
 	!p.printed && return
 
-    bar = barstring(p.barlen, 100, barglyphs=p.barglyphs)
+    bar = barstring(p.barlen, 1, barglyphs=p.barglyphs)
 	dur = durationstring(time()-p.tfirst)
     bar_str = @sprintf "100%%%s Time: %s" bar dur
     prefix = length(p.current_values) == 0 ? "[ " : "┌ "
@@ -154,8 +154,8 @@ function with_progress(f::Function; kwargs...)
 	logger = ProgressLogger(; kwargs...)
 	with_logger(logger) do
 		f()
+        @progress "done"
 	end
-	@progress "done"
 end
 
 end # module

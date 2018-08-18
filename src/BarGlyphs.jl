@@ -26,10 +26,10 @@ end
 function barstring(barlen, percentage_complete; barglyphs::BarGlyphs=BarGlyphs('|','█','█',' ','|'))
     bar = ""
     if barlen>0
-        if percentage_complete == 100 # if we're done, don't use the "front" character
+        if percentage_complete == 1 # if we're done, don't use the "front" character
             bar = string(barglyphs.leftend, repeat(string(barglyphs.fill), barlen), barglyphs.rightend)
         else
-            nsolid = round(Int, barlen * percentage_complete / 100)
+            nsolid = round(Int, barlen * percentage_complete)
             nempty = barlen - nsolid
             bar = string(barglyphs.leftend,
                          repeat(string(barglyphs.fill), max(0,nsolid-1)),
