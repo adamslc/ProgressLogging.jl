@@ -1,20 +1,27 @@
 module ProgressLogging
 
-using Logging, Printf
-import Logging: handle_message, shouldlog, min_enabled_level, catch_exceptions
+import Printf: @sprintf
+
+using Logging
+import Logging: handle_message, shouldlog, min_enabled_level, catch_exceptions,
+                LogLevel
+
+# import Base.CoreLogging: logmsg_code, _min_enabled_level, current_logger_for_env
+
 export ProgressLogger, Progress, BarGlyphs, with_progress, @progress
 
 include("BarGlyphs.jl")
 include("utils.jl")
 include("Progress.jl")
 
-const ProgressLevel = Logging.LogLevel(-1)
+const ProgressLevel = LogLevel(-1)
 
 mutable struct ProgressLogger <: AbstractLogger
 	parent_logger::AbstractLogger
+    output::IO
     p::Dict{Symbol, Progress}
 
-    ProgressLogger() = new(current_logger(), Dict{Symbol, Progress}())
+    ProgressLogger() = new(current_logger(), stderr, Dict{Symbol, Progress}())
 end
 
 function handle_message(logger::ProgressLogger, level, message, mod, group, id,
@@ -24,11 +31,13 @@ function handle_message(logger::ProgressLogger, level, message, mod, group, id,
             if kwargs[:progress] == "done" || kwargs[:progress] >= 1
                 return
             end
-            logger.p[id] = Progress()
+            logger.p[id] = Progress(message; kwargs...)
+            println(logger.output)
         end
 
         if kwargs[:progress] == "done" || kwargs[:progress] >= 1
-            finish_progress(logger.p[id])
+            clear_lines(logger.output, logger.p)
+            finish_progress(logger.output, logger.p[id])
             delete!(logger.p, id)
         else
             logger.p[id].progress = kwargs[:progress]
@@ -42,58 +51,50 @@ function handle_message(logger::ProgressLogger, level, message, mod, group, id,
                 end
     		end
     		logger.p[id].current_values = current_values
+
+            clear_lines(logger.output, logger.p)
         end
-
-        num_should_clear = 0
-        for (id, p) in logger.p
-            check_clear_lines(p, clear_first_line=true)
-
-            if p.printed
-                num_should_clear += 1
-            end
-        end
-
-        move_cursor_up_while_clearing_lines(stderr, num_should_clear - 1)
 
         for (i, (id, p)) in enumerate(logger.p)
-            print_progress(p)
+            print_progress(logger.output, p)
             i != length(logger.p) && println()
-            # check_float(p)
         end
-	elseif Logging.min_enabled_level(logger.parent_logger) <= level &&
-           Logging.shouldlog(logger.parent_logger, level, mod, group, id)
+	elseif min_enabled_level(logger.parent_logger) <= level &&
+           shouldlog(logger.parent_logger, level, mod, group, id)
 
-        for (id, p) in logger.p
-            check_clear_lines(p, clear_first_line=true)
-        end
-        move_cursor_up_while_clearing_lines(stderr, length(logger.p) - 1)
-        print("\r\u1b[K")
+        clear_lines(logger.output, logger.p)
 
-		Logging.handle_message(logger.parent_logger, level, message, mod, group,
+		handle_message(logger.parent_logger, level, message, mod, group,
                                id, file, line; kwargs...)
 
         for (i, (id, p)) in enumerate(logger.p)
-            print_progress(p)
-            i != length(logger.p) && println()
-            # check_float(p)
+            print_progress(logger.output, p)
+            i != length(logger.p) && println(logger.output)
         end
 	end
 end
 shouldlog(p::ProgressLogger, level, args...) = true
 min_enabled_level(p::ProgressLogger) =
-    min(Logging.LogLevel(-2), min_enabled_level(p.parent_logger))
+    min(LogLevel(-2), min_enabled_level(p.parent_logger))
 catch_exceptions(::ProgressLogger) = false
 
-macro progress(prog)
-    :(@logmsg(ProgressLevel, "", progress=$(esc(prog)), _module=nothing, _group=nothing, _file=nothing, _line=nothing))
+# macro progress(id, msg, prog, kwargs...)
+#     logmsg_code(nothing, nothing, nothing, ProgressLevel, msg,
+#         :(_id=id), :(_group=nothing), :(progress=prog), kwargs...)
+# end
+macro progress(id, msg, prog, kwargs...)
+    esc_kwargs = [esc(k) for k in kwargs]
+
+    :(@logmsg(ProgressLevel, $(esc(msg)), _id=$(esc(id)), progress=$(esc(prog)),
+        _module=nothing, _group=nothing, _file=nothing, _line=nothing,
+        $(esc_kwargs...)))
 end
 
 function with_progress(f::Function; kwargs...)
-    Logging.disable_logging(Logging.LogLevel(-2))
+    disable_logging(LogLevel(-2))
 	logger = ProgressLogger(; kwargs...)
 	with_logger(logger) do
 		f()
-        @progress "done"
 	end
 end
 

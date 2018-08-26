@@ -1,13 +1,9 @@
-mutable struct Progress
-    output::IO
-
-    progress::Real
+mutable struct Progress 
+    progress::Float64
     
     tfirst::Float64
     tlast::Float64
     dt::Float64
-
-    printed::Bool
 
     desc::AbstractString
     barlen::Int
@@ -15,26 +11,24 @@ mutable struct Progress
     desc_color::Symbol
     bar_color::Symbol
 
-    float::Bool
-
     numprintedvalues::Int
     current_values::Vector{Any}
 
-    function Progress(; dt=0.1, desc="Progress: ", desc_color=:green,
-                            bar_color=:color_normal, output=stderr,
-                            barlen=tty_width(desc), float::Bool=true,
-                            barglyphs=BarGlyphs('|','█','█',' ','|'))
+    function Progress(desc="Progress: "; _dt=0.1, _desc_color=:green,
+                            _bar_color=:color_normal,
+                            _barlen=tty_width(desc),
+                            _barglyphs=BarGlyphs('|','█','█',' ','|'),
+                            _kwargs...)
         progress = 0.
         tfirst = tlast = time()
-        printed = false
         numprintedvalues = 0
 
-        new(output, progress, tfirst, tlast, dt, printed, desc, barlen,
-            barglyphs, desc_color, bar_color, float, numprintedvalues, Any[])
+        new(progress, tfirst, tlast, _dt, desc, _barlen,
+            _barglyphs, _desc_color, _bar_color, numprintedvalues, Any[])
     end
 end
 
-function print_progress(p::Progress)
+function print_progress(output::IO, p::Progress)
     t = time()
 
     bar = barstring(p.barlen, p.progress, barglyphs=p.barglyphs)
@@ -49,34 +43,30 @@ function print_progress(p::Progress)
     bar_str = @sprintf "%3u%%%s  ETA: %s" round(Int, 100*p.progress) bar eta
 
     prefix = length(p.current_values) == 0 ? "[ " : "┌ "
-    printover(p.output, prefix*p.desc, bar_str, p.desc_color, p.bar_color)
-    printvalues!(p, p.current_values; prefix_color=p.desc_color, value_color=p.bar_color)
+    printover(output, prefix*p.desc, bar_str, p.desc_color, p.bar_color)
+    printvalues!(output, p, p.current_values; prefix_color=p.desc_color, value_color=p.bar_color)
 
     # Compensate for any overhead of printing. This can be
     # especially important if you're running over a slow network
     # connection.
     p.tlast = t + 2*(time()-t)
-    p.printed = true
 
     return nothing
 end
 
-function finish_progress(p::Progress)
-    !p.printed && return
-
+function finish_progress(output, p::Progress)
     bar = barstring(p.barlen, 1, barglyphs=p.barglyphs)
     dur = durationstring(time()-p.tfirst)
     bar_str = @sprintf "100%%%s Time: %s" bar dur
     prefix = length(p.current_values) == 0 ? "[ " : "┌ "
 
-    p.float && move_cursor_up_while_clearing_lines(p.output, p.numprintedvalues)
-    printover(p.output, prefix*p.desc, bar_str, p.desc_color, p.bar_color)
-    printvalues!(p, p.current_values; prefix_color=p.desc_color, value_color=p.bar_color)
-    println(p.output)
+    printover(output, prefix*p.desc, bar_str, p.desc_color, p.bar_color)
+    printvalues!(output, p, p.current_values; prefix_color=p.desc_color, value_color=p.bar_color)
+    println(output)
 end
 
 # Internal method to print additional values below progress bar
-function printvalues!(p::Progress, showvalues; prefix_color=false, value_color=false)
+function printvalues!(output, p::Progress, showvalues; prefix_color, value_color)
     len = length(showvalues)
     len == 0 && return
 
@@ -86,19 +76,18 @@ function printvalues!(p::Progress, showvalues; prefix_color=false, value_color=f
         prefix = i == len ? "\n└   " : "\n│   "
         msg = rpad(string(name) * ": ", maxwidth+2+1) * string(value)
 
-        (prefix_color == false) ? print(p.output, prefix) : printstyled(p.output, prefix; color=prefix_color, bold=true)
-        (value_color == false) ? print(p.output, msg) : printstyled(p.output, msg; color=value_color)
+        printstyled(output, prefix; color=prefix_color, bold=true)
+        printstyled(output, msg; color=value_color)
     end
     p.numprintedvalues = length(showvalues)
 end
 
-function check_clear_lines(p::Progress; clear_first_line=false)
-    if p.printed && p.float
-        move_cursor_up_while_clearing_lines(p.output, p.numprintedvalues)
-        clear_first_line && print("\r\u1b[K")
+function clear_lines(output, progs::Dict{Symbol, Progress})
+    num_lines = 0
+    for (id, p) in progs
+        num_lines += p.numprintedvalues + 1
     end
-end
 
-function check_float(p::Progress)
-    p.float || println(p.output)
+    move_cursor_up_while_clearing_lines(output, num_lines - 1)
+    print(output, "\r\u1b[K")
 end
