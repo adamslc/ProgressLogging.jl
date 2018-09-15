@@ -43,14 +43,14 @@ function handle_message(logger::ProgressLogger, level, message, mod, group, id,
             logger.p[id].progress = kwargs[:progress]
             time() < logger.p[id].tlast + logger.p[id].dt && return
 
-    		current_values = Any[]
-    		for (key, value) in kwargs
-    			key_str = string(key)
-    			if key_str[1] != '_' && key_str != "progress"
-                    push!(current_values, (key_str, value))
-                end
-    		end
-    		logger.p[id].current_values = current_values
+		current_values = Any[]
+		for (key, value) in kwargs
+			key_str = string(key)
+			if key_str[1] != '_' && key_str != "progress"
+				push!(current_values, (key_str, value))
+			end
+		end
+		logger.p[id].current_values = current_values
 
             clear_lines(logger.output, logger.p)
         end
@@ -83,11 +83,19 @@ catch_exceptions(::ProgressLogger) = false
 #         :(_id=id), :(_group=nothing), :(progress=prog), kwargs...)
 # end
 macro progress(id, msg, prog, kwargs...)
-    esc_kwargs = [esc(k) for k in kwargs]
+    esc_kwargs = [parse_kwarg(k) for k in kwargs]
 
     :(@logmsg(ProgressLevel, $(esc(msg)), _id=$(esc(id)), progress=$(esc(prog)),
         _module=nothing, _group=nothing, _file=nothing, _line=nothing,
         $(esc_kwargs...)))
+end
+
+function parse_kwarg(arg)
+    if typeof(arg) == Symbol
+        return :($(Symbol(arg)) = $(esc(arg)))
+    else
+        return esc(arg)
+    end
 end
 
 function with_progress(f::Function; kwargs...)

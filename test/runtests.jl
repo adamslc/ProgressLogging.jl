@@ -8,7 +8,7 @@ function f(N)
         i % 10 == 0 && @info "stuff"
 
         sleep(0.05)
-        @progress :PROGRESS "Progress: " i/N i
+        @progress :PROGRESS "Progress: " i/N
     end
     @error "finished"
 end
